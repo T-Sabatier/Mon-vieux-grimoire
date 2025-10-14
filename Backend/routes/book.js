@@ -8,8 +8,8 @@ const multer = require ('../middleware/multer-congif');
 router.get ('/bestrating', bookCtrl.getBestRatedBooks);
 
 //Routes publiques
-router.get ('/:id', auth, bookCtrl,getOneBook);
-router.get ('/', auth,bookCtrl.getAllBooks);
+router.get ('/:id', bookCtrl,getOneBook);
+router.get ('/', bookCtrl.getAllBooks);
 
 //Routes protégées
 router.post ('/', auth, multer,bookCtrl.createBook);
