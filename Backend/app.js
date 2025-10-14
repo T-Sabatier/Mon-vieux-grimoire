@@ -1,6 +1,7 @@
 const express = require('express'); 
 const bodyParser = require ('body-parser');
 const mongoose = require('mongoose');
+const userRoutes = require('./routes/user');
 
 const Book = require ('./models/Book');
 
@@ -20,6 +21,13 @@ app.use((req, res, next) => {
 });
 
 app.use(bodyParser.json());
+
+const path = require('path');
+   app.use('/images', express.static(path.join(__dirname, 'images')));
+
+
+app.use('/api/auth', userRoutes);
+
 
 app.post ('/api/books', (req, res, next) => {
   delete req.body._id;
@@ -54,6 +62,8 @@ app.get ('/api/books', (req, res, next) => {
   .then (books => res.status (200).json(books))
   .catch (error => res.status (400).json ({error}));
 });
+
+
 
 
 module.exports = app;
