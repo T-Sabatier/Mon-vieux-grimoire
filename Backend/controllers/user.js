@@ -4,10 +4,10 @@ const User = require('../models/User');
 
 exports.signup = (req, res, next) => {
   bcrypt.hash(req.body.password, 10)
-    .then(hash => {
+    .then(hash => {  // Hachage mdp (bcrypt)
       const user = new User({
         email: req.body.email,
-        password: hash
+        password: hash  // Save hash pas mdp
       });
       user.save()
         .then(() => res.status(201).json({ message: 'Utilisateur créé !' }))
