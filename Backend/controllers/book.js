@@ -79,5 +79,41 @@ exports.getAllBooks = (req, res, next) => {
 };
 
 exports.rateBook = (req, res,next) => {
-
+   
+    const userId = req.body.userId;
+    const rating =req.body.rating;
+    const bookId =req.params.id;
+     
+    if (rating < 0 || rating > 5) {
+    return res.status(400).json({ message: 'La note doit être entre 0 et 5' });
 }
+    Book.findOne({ _id: req.params.id })
+    .then(book => {
+        // Vérifier si déjà noté
+        const alreadyRated = book.ratings.find(rating => rating.userId === userId);
+        if (alreadyRated) {
+            return res.status(400).json({ message: 'Vous avez déjà noté ce livre' });
+        }
+        
+        // Ajouter la note
+        book.ratings.push({ userId: userId, grade: rating });
+        
+        // Calculer la moyenne
+        const totalGrades = book.ratings.reduce((somme, rating) => somme + rating.grade, 0);
+        book.averageRating = Number((totalGrades / book.ratings.length).toFixed(1)); // une décimale
+        
+        // Sauvegarder
+        book.save()
+            .then(updatedBook => res.status(200).json(updatedBook))
+            .catch(error => res.status(400).json({ error }));
+    })
+    .catch(error => res.status(500).json({ error }));
+}
+
+exports.getBestRatedBooks = (req, res, next) => {
+    Book.find()
+        .sort({ averageRating: -1 }) //Trie par note plus grand au plus petit
+        .limit(3)
+        .then(books => res.status(200).json(books))
+        .catch(error => res.status(400).json({ error }));
+};
