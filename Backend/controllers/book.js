@@ -4,16 +4,22 @@ const fs = require ('fs');
 
 exports.createBook = (req, res, next) => {
     const bookObject = JSON.parse(req.body.book);
+    const initialGrade = bookObject.ratings && bookObject.ratings[0] ? bookObject.ratings[0].grade : null;
+
     delete bookObject._id;
     delete bookObject.ratings;
     delete bookObject.averageRating;
+    delete bookObject.userId;
     
     const book = new Book({
         ...bookObject,
         userId: req.userId,
         imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`,
-        ratings: [],
-        averageRating: 0
+        ratings: initialGrade ? [{ 
+            userId: req.userId, 
+            grade: Number(initialGrade) 
+        }] : [],
+        averageRating: initialGrade ? Number(initialGrade) : 0
     });
 
     book.save()
