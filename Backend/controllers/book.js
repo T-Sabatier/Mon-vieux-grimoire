@@ -1,4 +1,5 @@
 const Book = require ('../models/Book');
+const sharp = require('sharp');
 const fs = require ('fs');
 
 
@@ -11,18 +12,27 @@ exports.createBook = (req, res, next) => {
     delete bookObject.averageRating;
     delete bookObject.userId;
     
-    const book = new Book({
-        ...bookObject,
-        userId: req.userId,
-        imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`,
-        ratings: initialGrade ? [{ 
-            userId: req.userId, 
-            grade: Number(initialGrade) 
-        }] : [],
-        averageRating: initialGrade ? Number(initialGrade) : 0
-    });
-
-    book.save()
+    const { buffer, originalname } = req.file;
+    const timestamp = Date.now();
+    const ref = `${timestamp}-${originalname.split('.')[0]}.webp`;
+    
+    sharp(buffer)
+        .webp({ quality: 20 })
+        .toFile('./images/' + ref)
+        .then(() => {
+            const book = new Book({
+                ...bookObject,
+                userId: req.userId,
+                imageUrl: `${req.protocol}://${req.get('host')}/images/${ref}`,
+                ratings: initialGrade ? [{ 
+                    userId: req.userId, 
+                    grade: Number(initialGrade) 
+                }] : [],
+                averageRating: initialGrade ? Number(initialGrade) : 0
+            });
+            
+            return book.save();
+        })
         .then(() => res.status(201).json({ message: 'Livre enregistré' }))
         .catch(error => res.status(400).json({ error }));
 };
@@ -31,29 +41,39 @@ exports.createBook = (req, res, next) => {
 exports.modifyBook = (req, res, next) => {
     Book.findOne({ _id: req.params.id })
         .then(book => {
-            //Vérification propriétaire
             if (book.userId !== req.userId) {
                 return res.status(403).json({ message: 'Requête non autorisée' });
             }
             
-            //Construire l'objet
-            const bookObject = req.file ? {
-                ...JSON.parse(req.body.book),
-                imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`
-            } : { ...req.body };
-            
-            //Supprimer ancienne image si nouvelle
             if (req.file) {
+                // Supprimer ancienne
                 const filename = book.imageUrl.split('/images/')[1];
                 fs.unlink(`images/${filename}`, (err) => {
                     if (err) console.log(err);
                 });
+                
+                // Sharp
+                const { buffer, originalname } = req.file;
+                const timestamp = Date.now();
+                const ref = `${timestamp}-${originalname.split('.')[0]}.webp`;
+                
+                return sharp(buffer)
+                    .webp({ quality: 20 })
+                    .toFile('./images/' + ref)
+                    .then(() => {
+                        const bookObject = {
+                            ...JSON.parse(req.body.book),
+                            imageUrl: `${req.protocol}://${req.get('host')}/images/${ref}`
+                        };
+                        return Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id });
+                    })
+                    .then(() => res.status(200).json({ message: 'Livre modifié' }));
             }
             
-            //Mettre à jour
-            Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id })
-                .then(() => res.status(200).json({ message: 'Livre modifié' }))
-                .catch(error => res.status(400).json({ error }));
+            
+            const bookObject = { ...req.body };
+            return Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id })
+                .then(() => res.status(200).json({ message: 'Livre modifié' }));
         })
         .catch(error => res.status(500).json({ error }));
 };
