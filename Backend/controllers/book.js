@@ -4,6 +4,13 @@ const cloudinary = require('../middleware/cloudinary-config');
 
 exports.createBook = async (req, res, next) => {
     try {
+        console.log('=== CREATE BOOK START ===');
+        console.log('Cloudinary config:', {
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY ? 'SET' : 'NOT SET',
+            api_secret: process.env.CLOUDINARY_API_SECRET ? 'SET' : 'NOT SET'
+        });
+        
         const bookObject = JSON.parse(req.body.book);
         const initialGrade = bookObject.ratings && bookObject.ratings[0] ? bookObject.ratings[0].grade : null;
 
@@ -12,10 +19,19 @@ exports.createBook = async (req, res, next) => {
         delete bookObject.averageRating;
         delete bookObject.userId;
         
+        console.log('File received:', req.file ? 'YES' : 'NO');
+        
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        
         // Optimiser l'image avec Sharp
+        console.log('Optimizing image...');
         const optimizedBuffer = await sharp(req.file.buffer)
             .webp({ quality: 20 })
             .toBuffer();
+        
+        console.log('Image optimized, uploading to Cloudinary...');
         
         // Upload sur Cloudinary
         const uploadStream = cloudinary.uploader.upload_stream(
@@ -26,8 +42,11 @@ exports.createBook = async (req, res, next) => {
             },
             async (error, result) => {
                 if (error) {
+                    console.error('Cloudinary upload error:', error);
                     return res.status(500).json({ error: error.message });
                 }
+                
+                console.log('Upload successful:', result.secure_url);
                 
                 const book = new Book({
                     ...bookObject,
@@ -41,6 +60,7 @@ exports.createBook = async (req, res, next) => {
                 });
                 
                 await book.save();
+                console.log('Book saved to database');
                 res.status(201).json({ message: 'Livre enregistré' });
             }
         );
@@ -48,6 +68,7 @@ exports.createBook = async (req, res, next) => {
         uploadStream.end(optimizedBuffer);
         
     } catch (error) {
+        console.error('=== CREATE BOOK ERROR ===', error);
         res.status(400).json({ error: error.message });
     }
 };
