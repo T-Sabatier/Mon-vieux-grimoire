@@ -36,7 +36,7 @@ exports.createBook = async (req, res, next) => {
         // Upload sur Cloudinary
         const uploadStream = cloudinary.uploader.upload_stream(
             {
-                folder: 'mon-vieux-grimoire',
+                folder: 'Monvieuxgrimoire',
                 resource_type: 'image',
                 format: 'webp'
             },
