@@ -1,3 +1,4 @@
+/* eslint-disable */
 const API_URL = 'https://mon-vieux-grimoire-api-g1t2.onrender.com';
 export const API_ROUTES = {
   SIGN_UP: `${API_URL}/api/auth/signup`,
