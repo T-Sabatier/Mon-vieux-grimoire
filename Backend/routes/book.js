@@ -12,7 +12,10 @@ router.get ('/:id', bookCtrl.getOneBook);
 router.get ('/', bookCtrl.getAllBooks);
 
 //Routes protégées
-router.post ('/', auth, multer,bookCtrl.createBook);
+router.post('/', (req, res, next) => {
+    console.log('=== POST /api/books ROUTE CALLED ===');
+    next();
+}, auth, multer, bookCtrl.createBook);
 router.put ('/:id', auth,multer,bookCtrl.modifyBook);
 router.delete ('/:id', auth,bookCtrl.deleteBook);
 router.post ('/:id/rating', auth,bookCtrl.rateBook);
