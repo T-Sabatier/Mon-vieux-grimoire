@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 
 module.exports = (req, res, next) => {
+  console.log('=== AUTH MIDDLEWARE ===');
+    console.log('Authorization header:', req.headers.authorization ? 'PRESENT' : 'MISSING');
   try {
     const token = req.headers.authorization.split(' ')[1];
     const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
