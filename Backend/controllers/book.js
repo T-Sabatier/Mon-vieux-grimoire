@@ -1,97 +1,130 @@
-const Book = require ('../models/Book');
+const Book = require('../models/Book');
 const sharp = require('sharp');
-const fs = require ('fs');
+const cloudinary = require('../middleware/cloudinary-config');
 
+exports.createBook = async (req, res, next) => {
+    try {
+        const bookObject = JSON.parse(req.body.book);
+        const initialGrade = bookObject.ratings && bookObject.ratings[0] ? bookObject.ratings[0].grade : null;
 
-exports.createBook = (req, res, next) => {
-    const bookObject = JSON.parse(req.body.book);
-    const initialGrade = bookObject.ratings && bookObject.ratings[0] ? bookObject.ratings[0].grade : null;
-
-    delete bookObject._id;
-    delete bookObject.ratings;
-    delete bookObject.averageRating;
-    delete bookObject.userId;
-    
-    const { buffer, originalname } = req.file;
-    const timestamp = Date.now();
-    const ref = `${timestamp}-${originalname.split('.')[0]}.webp`;
-    
-    sharp(buffer)
-        .webp({ quality: 20 })
-        .toFile('./images/' + ref)
-        .then(() => {
-            const book = new Book({
-                ...bookObject,
-                userId: req.userId,
-                imageUrl: `${req.protocol}://${req.get('host')}/images/${ref}`,
-                ratings: initialGrade ? [{ 
-                    userId: req.userId, 
-                    grade: Number(initialGrade) 
-                }] : [],
-                averageRating: initialGrade ? Number(initialGrade) : 0
-            });
-            
-            return book.save();
-        })
-        .then(() => res.status(201).json({ message: 'Livre enregistré' }))
-        .catch(error => res.status(400).json({ error }));
-};
-
-
-exports.modifyBook = (req, res, next) => {
-    Book.findOne({ _id: req.params.id })
-        .then(book => {
-            if (book.userId !== req.userId) {
-                return res.status(403).json({ message: 'Requête non autorisée' });
-            }
-            
-            if (req.file) {
-                // Supprimer ancienne
-                const filename = book.imageUrl.split('/images/')[1];
-                fs.unlink(`images/${filename}`, (err) => {
-                    if (err) console.log(err);
+        delete bookObject._id;
+        delete bookObject.ratings;
+        delete bookObject.averageRating;
+        delete bookObject.userId;
+        
+        // Optimiser l'image avec Sharp
+        const optimizedBuffer = await sharp(req.file.buffer)
+            .webp({ quality: 20 })
+            .toBuffer();
+        
+        // Upload sur Cloudinary
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                folder: 'mon-vieux-grimoire',
+                resource_type: 'image',
+                format: 'webp'
+            },
+            async (error, result) => {
+                if (error) {
+                    return res.status(500).json({ error: error.message });
+                }
+                
+                const book = new Book({
+                    ...bookObject,
+                    userId: req.userId,
+                    imageUrl: result.secure_url,
+                    ratings: initialGrade ? [{ 
+                        userId: req.userId, 
+                        grade: Number(initialGrade) 
+                    }] : [],
+                    averageRating: initialGrade ? Number(initialGrade) : 0
                 });
                 
-                // Sharp
-                const { buffer, originalname } = req.file;
-                const timestamp = Date.now();
-                const ref = `${timestamp}-${originalname.split('.')[0]}.webp`;
-                
-                return sharp(buffer)
-                    .webp({ quality: 20 })
-                    .toFile('./images/' + ref)
-                    .then(() => {
-                        const bookObject = {
-                            ...JSON.parse(req.body.book),
-                            imageUrl: `${req.protocol}://${req.get('host')}/images/${ref}`
-                        };
-                        return Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id });
-                    })
-                    .then(() => res.status(200).json({ message: 'Livre modifié' }));
+                await book.save();
+                res.status(201).json({ message: 'Livre enregistré' });
             }
+        );
+        
+        uploadStream.end(optimizedBuffer);
+        
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+exports.modifyBook = async (req, res, next) => {
+    try {
+        const book = await Book.findOne({ _id: req.params.id });
+        
+        if (book.userId !== req.userId) {
+            return res.status(403).json({ message: 'Requête non autorisée' });
+        }
+        
+        if (req.file) {
+            // Supprimer l'ancienne image de Cloudinary
+            const publicId = book.imageUrl.split('/').slice(-2).join('/').split('.')[0];
+            await cloudinary.uploader.destroy(`mon-vieux-grimoire/${publicId}`);
             
+            // Optimiser la nouvelle image
+            const optimizedBuffer = await sharp(req.file.buffer)
+                .webp({ quality: 20 })
+                .toBuffer();
             
+            // Upload sur Cloudinary
+            const uploadStream = cloudinary.uploader.upload_stream(
+                {
+                    folder: 'mon-vieux-grimoire',
+                    resource_type: 'image',
+                    format: 'webp'
+                },
+                async (error, result) => {
+                    if (error) {
+                        return res.status(500).json({ error: error.message });
+                    }
+                    
+                    const bookObject = {
+                        ...JSON.parse(req.body.book),
+                        imageUrl: result.secure_url
+                    };
+                    
+                    await Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id });
+                    res.status(200).json({ message: 'Livre modifié' });
+                }
+            );
+            
+            uploadStream.end(optimizedBuffer);
+        } else {
             const bookObject = { ...req.body };
-            return Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id })
-                .then(() => res.status(200).json({ message: 'Livre modifié' }));
-        })
-        .catch(error => res.status(500).json({ error }));
+            await Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id });
+            res.status(200).json({ message: 'Livre modifié' });
+        }
+        
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 };
 
-exports.deleteBook = (req, res, next) => {
-    Book.findOne ({_id: req.params.id})
-        .then (thing => {
-            const filename = thing.imageUrl.split ('/images/')[1];
-            fs.unlink (`images/${filename}`, () => {
-                Book.deleteOne ({_id: req.params.id})
-                .then (()=> res.status (200).json ({message :'Livre supprimé'}))
-                .catch (error => res.status (400).json ({error}));
-            })
-        })
-        .catch(error => res.status(500).json({ error }));
+exports.deleteBook = async (req, res, next) => {
+    try {
+        const book = await Book.findOne({ _id: req.params.id });
+        
+        if (book.userId !== req.userId) {
+            return res.status(403).json({ message: 'Requête non autorisée' });
+        }
+        
+        // Supprimer l'image de Cloudinary
+        const publicId = book.imageUrl.split('/').slice(-2).join('/').split('.')[0];
+        await cloudinary.uploader.destroy(`mon-vieux-grimoire/${publicId}`);
+        
+        await Book.deleteOne({ _id: req.params.id });
+        res.status(200).json({ message: 'Livre supprimé' });
+        
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 };
 
-
+// Gardez les autres exports identiques (getOneBook, getAllBooks, rateBook, getBestRatedBooks)
 exports.getOneBook = (req, res, next) => {
   Book.findOne({ _id: req.params.id })
     .then(books => res.status(200).json(books))
@@ -104,41 +137,35 @@ exports.getAllBooks = (req, res, next) => {
     .catch(error => res.status(400).json({ error }));
 };
 
-exports.rateBook = (req, res,next) => {
-   
+exports.rateBook = (req, res, next) => {
     const userId = req.body.userId;
-    const rating =req.body.rating;
-    const bookId =req.params.id;
-     
+    const rating = req.body.rating;
+    
     if (rating < 0 || rating > 5) {
-    return res.status(400).json({ message: 'La note doit être entre 0 et 5' });
-}
+        return res.status(400).json({ message: 'La note doit être entre 0 et 5' });
+    }
+    
     Book.findOne({ _id: req.params.id })
-    .then(book => {
-        // Vérifier si déjà noté
-        const alreadyRated = book.ratings.find(rating => rating.userId === userId);
-        if (alreadyRated) {
-            return res.status(400).json({ message: 'Vous avez déjà noté ce livre' });
-        }
-        
-        // Ajouter la note
-        book.ratings.push({ userId: userId, grade: rating });
-        
-        // Calculer la moyenne
-        const totalGrades = book.ratings.reduce((somme, rating) => somme + rating.grade, 0);
-        book.averageRating = Number((totalGrades / book.ratings.length).toFixed(1)); // une décimale
-        
-        // Sauvegarder
-        book.save()
-            .then(updatedBook => res.status(200).json(updatedBook))
-            .catch(error => res.status(400).json({ error }));
-    })
-    .catch(error => res.status(500).json({ error }));
-}
+        .then(book => {
+            const alreadyRated = book.ratings.find(rating => rating.userId === userId);
+            if (alreadyRated) {
+                return res.status(400).json({ message: 'Vous avez déjà noté ce livre' });
+            }
+            
+            book.ratings.push({ userId: userId, grade: rating });
+            const totalGrades = book.ratings.reduce((somme, rating) => somme + rating.grade, 0);
+            book.averageRating = Number((totalGrades / book.ratings.length).toFixed(1));
+            
+            book.save()
+                .then(updatedBook => res.status(200).json(updatedBook))
+                .catch(error => res.status(400).json({ error }));
+        })
+        .catch(error => res.status(500).json({ error }));
+};
 
 exports.getBestRatedBooks = (req, res, next) => {
     Book.find()
-        .sort({ averageRating: -1 }) //Trie par note plus grand au plus petit
+        .sort({ averageRating: -1 })
         .limit(3)
         .then(books => res.status(200).json(books))
         .catch(error => res.status(400).json({ error }));
